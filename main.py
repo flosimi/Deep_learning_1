@@ -3,226 +3,213 @@ import torch.nn as nn
 import torch.optim as optim
 import torchvision
 import torchvision.transforms as transforms
-from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 import numpy as np
 
 # ==========================================
-# 1. Configuration & Data Loading
+# 0. CONFIGURATION
 # ==========================================
-# Device configuration (use GPU if available, else CPU)
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-print(f"Using device: {device}")
-
-# Hyperparameters
 BATCH_SIZE = 64
-EPOCHS = 5  # Keep it low for demonstration speed (increase to 10-20 for better results)
+EPOCHS = 5  # Kept small for quick testing; increase to 10-20 for better results
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {DEVICE}")
 
-# Transformations: Convert to Tensor and Normalize to range [-1, 1]
+# ==========================================
+# 1. DATA PREPARATION
+# ==========================================
+# Transformation: Convert to Tensor and Normalize (Mean=0.5, Std=0.5)
 transform = transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize((0.5,), (0.5,))
-])# Data Loading
-print("\nDownloading and Loading Data...")
-# Training Data
-train_dataset = torchvision.datasets.FashionMNIST(root='./data', train=True, 
-                                                  transform=transform, download=True)
-train_loader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+])
 
-# Test Data
-test_dataset = torchvision.datasets.FashionMNIST(root='./data', train=False, 
-                                                 transform=transform, download=True)
-test_loader = DataLoader(dataset=test_dataset, batch_size=BATCH_SIZE, shuffle=False)
+print("Loading FashionMNIST dataset...")
+trainset = torchvision.datasets.FashionMNIST(root='./data', train=True, download=True, transform=transform)
+trainloader = torch.utils.data.DataLoader(trainset, batch_size=BATCH_SIZE, shuffle=True)
 
-classes = ('T-shirt/top', 'Trouser', 'Pullover', 'Dress', 'Coat', 
+testset = torchvision.datasets.FashionMNIST(root='./data', train=False, download=True, transform=transform)
+testloader = torch.utils.data.DataLoader(testset, batch_size=BATCH_SIZE, shuffle=False)
+
+classes = ('T-shirt/top', 'Trouser', 'Pullover', 'Dress', 'Coat',
            'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle boot')
 
 # ==========================================
-# 2. Model Definitions
+# 2. MODEL 1: MLP (The Baseline)
+# Course Reference: Lecture 3 (Multilayer Perceptron)
 # ==========================================
-
-# --- Model A: Simple MLP (Baseline) ---
-class SimpleMLP(nn.Module):
+class MLP(nn.Module):
     def __init__(self):
-        super(SimpleMLP, self).__init__()
-        # Input: 28x28 = 784 pixels
-        # Hidden Layer: 256 neurons
-        # Output: 10 classes
+        super(MLP, self).__init__()
         self.flatten = nn.Flatten()
-        self.fc1 = nn.Linear(28 * 28, 256) 
+        # Input: 28x28 = 784 features
+        # Hidden Layer 1: 512 neurons
+        self.fc1 = nn.Linear(28 * 28, 512)
+        # Hidden Layer 2: 256 neurons
+        self.fc2 = nn.Linear(512, 256)
+        # Output Layer: 10 classes
+        self.fc3 = nn.Linear(256, 10)
+        # Activation: ReLU (Lecture 3, Slide 9)
         self.relu = nn.ReLU()
-        self.fc2 = nn.Linear(256, 10) 
 
     def forward(self, x):
         x = self.flatten(x)
-        x = self.fc1(x)
-        x = self.relu(x)
-        out = self.fc2(x)
-        return out
+        x = self.relu(self.fc1(x))
+        x = self.relu(self.fc2(x))
+        x = self.fc3(x)
+        return x
 
-# --- Model B: CNN (Extension 1) ---
-class SimpleCNN(nn.Module):
+# ==========================================
+# 3. MODEL 2: CNN (The Extension)
+# Course Reference: Lecture 4, Slide 21 (LeNet Architecture)
+# ==========================================
+class LeNet(nn.Module):
     def __init__(self):
-        super(SimpleCNN, self).__init__()
-        # Conv Layer 1: Input 1 channel (grayscale), Output 32 channels
-        self.layer1 = nn.Sequential(
-            nn.Conv2d(1, 32, kernel_size=3, padding=1),
-            nn.BatchNorm2d(32),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2) # Image becomes 14x14
-        )
-        # Conv Layer 2: Input 32 channels, Output 64 channels
-        self.layer2 = nn.Sequential(
-            nn.Conv2d(32, 64, kernel_size=3, padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(),
-            nn.MaxPool2d(2) # Image becomes 7x7
-        )
-        # Fully Connected Layer
-        self.fc1 = nn.Linear(64 * 7 * 7, 600)
-        self.drop = nn.Dropout(0.25)
-        self.fc2 = nn.Linear(600, 10)
+        super(LeNet, self).__init__()
+        # Layer 1: Convolution -> ReLU -> Pooling
+        # Input: 1 channel (grayscale), Output: 6 feature maps
+        self.conv1 = nn.Conv2d(1, 6, kernel_size=5, padding=2)
+        self.pool = nn.AvgPool2d(kernel_size=2, stride=2)
+        
+        # Layer 2: Convolution -> ReLU -> Pooling
+        self.conv2 = nn.Conv2d(6, 16, kernel_size=5)
+        
+        # Fully Connected Layers
+        self.flatten = nn.Flatten()
+        self.fc1 = nn.Linear(16 * 5 * 5, 120)
+        self.fc2 = nn.Linear(120, 84)
+        self.fc3 = nn.Linear(84, 10)
+        self.relu = nn.ReLU()
 
     def forward(self, x):
-        out = self.layer1(x)
-        out = self.layer2(out)
-        out = out.view(out.size(0), -1) # Flatten
-        out = self.fc1(out)
-        out = self.drop(out)
-        out = self.fc2(out)
-        return out
+        # C1 -> S2 (Pooling)
+        x = self.pool(self.relu(self.conv1(x)))
+        # C3 -> S4 (Pooling)
+        x = self.pool(self.relu(self.conv2(x)))
+        # Flatten for Dense Layers
+        x = self.flatten(x)
+        # F5 -> F6 -> Output
+        x = self.relu(self.fc1(x))
+        x = self.relu(self.fc2(x))
+        x = self.fc3(x)
+        return x
 
 # ==========================================
-# 3. Training & Evaluation Engine
+# 4. TRAINING ENGINE
 # ==========================================
-def train_model(model, train_loader, learning_rate=0.001, use_scheduler=False):
-    model = model.to(device)
-    model.train()  # Explicitly set to training mode
+def train_model(model, learning_rate=0.01):
+    model = model.to(DEVICE)
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    optimizer = optim.SGD(model.parameters(), lr=learning_rate, momentum=0.9)
     
-    # Extension 3: Learning Rate Scheduler
-    scheduler = None
-    if use_scheduler:
-        # Reduces LR by factor of 0.1 every 3 epochs
-        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.1)
-
     loss_history = []
     
-    print(f"Training {model.__class__.__name__}...")
     for epoch in range(EPOCHS):
-        model.train()
         running_loss = 0.0
-        for i, (images, labels) in enumerate(train_loader):
-            images, labels = images.to(device), labels.to(device)
-            
-            # Forward pass
-            outputs = model(images)
-            loss = criterion(outputs, labels)
-            
-            # Backward and optimize
+        for i, data in enumerate(trainloader, 0):
+            inputs, labels = data
+            inputs, labels = inputs.to(DEVICE), labels.to(DEVICE)
+
             optimizer.zero_grad()
+            outputs = model(inputs)
+            loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
-            
+
             running_loss += loss.item()
-            
-        avg_loss = running_loss / len(train_loader)
+        
+        avg_loss = running_loss / len(trainloader)
         loss_history.append(avg_loss)
+        print(f'   Epoch {epoch+1}: Loss = {avg_loss:.4f}')
         
-        current_lr = optimizer.param_groups[0]['lr']
-        print(f"Epoch [{epoch+1}/{EPOCHS}], Loss: {avg_loss:.4f}, LR: {current_lr}")
-        
-        if scheduler:
-            scheduler.step()
-            
     return loss_history
 
-def evaluate_model(model, test_loader):
+def evaluate_accuracy(model):
     model.eval()
     correct = 0
     total = 0
     with torch.no_grad():
-        for images, labels in test_loader:
-            images, labels = images.to(device), labels.to(device)
+        for data in testloader:
+            images, labels = data
+            images, labels = images.to(DEVICE), labels.to(DEVICE)
             outputs = model(images)
             _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
-    
-    acc = 100 * correct / total
-    model.train()  # Set back to training mode
-    return acc
+    return 100 * correct / total
 
 # ==========================================
-# 4. Running the Comparisons (Extension 1)
+# 5. EXPERIMENTS & VISUALIZATION
 # ==========================================
 
-# 1. Train MLP
-mlp_model = SimpleMLP()
-mlp_losses = train_model(mlp_model, train_loader)
-mlp_acc = evaluate_model(mlp_model, test_loader)
-torch.save(mlp_model.state_dict(), 'mlp_model.pth')
-print("MLP model saved to 'mlp_model.pth'")
+# --- A. Compare MLP vs CNN ---
+print("\n--- Experiment 1: MLP vs CNN ---")
 
-# 2. Train CNN
-cnn_model = SimpleCNN()
-cnn_losses = train_model(cnn_model, train_loader)
-cnn_acc = evaluate_model(cnn_model, test_loader)
-torch.save(cnn_model.state_dict(), 'cnn_model.pth')
-print("CNN model saved to 'cnn_model.pth'")
-
-print("\n--- Extension 1: Performance Comparison ---")
+print("Training MLP (Baseline)...")
+mlp = MLP()
+mlp_losses = train_model(mlp)
+mlp_acc = evaluate_accuracy(mlp)
 print(f"MLP Accuracy: {mlp_acc:.2f}%")
+
+print("\nTraining CNN (LeNet Extension)...")
+cnn = LeNet()
+cnn_losses = train_model(cnn)
+cnn_acc = evaluate_accuracy(cnn)
 print(f"CNN Accuracy: {cnn_acc:.2f}%")
 
-# Plotting Loss Curves
+# Plot Comparison
 plt.figure(figsize=(10, 5))
 plt.plot(mlp_losses, label='MLP Loss')
 plt.plot(cnn_losses, label='CNN Loss')
-plt.xlabel('Epoch')
-plt.ylabel('Loss')
 plt.title('Training Loss: MLP vs CNN')
+plt.xlabel('Epochs')
+plt.ylabel('Loss')
 plt.legend()
+plt.grid(True)
+plt.savefig('mlp_vs_cnn_loss.png')
 plt.show()
 
-# ==========================================
-# 5. Extension 2: Visualize Hidden Layer Weights
-# ==========================================
-def visualize_mlp_weights(model):
-    print("\n--- Extension 2: Visualizing MLP Weights ---")
-    # Extract weights from the first layer (fc1)
-    # Shape is [256, 784] -> 256 neurons, each with 784 weights mapping to pixels
-    weights = model.fc1.weight.data.cpu().numpy()
+# --- B. Visualize Weights (Extension 2) ---
+# Course Reference: Lecture 4, Slide 7 (Features/Filters)
+print("\n--- Experiment 2: Visualizing Weights ---")
+def visualize_kernels(model):
+    # Extract weights from the first convolutional layer
+    kernels = model.conv1.weight.data.cpu()
     
-    # Plot the first 16 neurons' weights as images
-    fig, axes = plt.subplots(4, 4, figsize=(8, 8))
-    fig.suptitle('Learned Weights of First Hidden Layer (MLP)')
+    # Normalize for visualization (0 to 1 range)
+    kernels = kernels - kernels.min()
+    kernels = kernels / kernels.max()
     
-    for i, ax in enumerate(axes.flat):
-        # Reshape 784 back to 28x28
-        weight_img = weights[i].reshape(28, 28)
-        # Use a diverging colormap (red=positive, blue=negative)
-        ax.imshow(weight_img, cmap='seismic') 
-        ax.axis('off')
-        
+    # Plot first 6 filters
+    fig, axes = plt.subplots(1, 6, figsize=(12, 3))
+    for i, ax in enumerate(axes):
+        if i < len(kernels):
+            ax.imshow(kernels[i, 0, :, :], cmap='gray')
+            ax.axis('off')
+            ax.set_title(f'Filter {i+1}')
+    plt.suptitle('Learned Kernels (Features) of Layer 1')
+    plt.savefig('cnn_kernels.png')
     plt.show()
 
-visualize_mlp_weights(mlp_model)
+visualize_kernels(cnn)
 
-# ==========================================
-# 6. Extension 3: Learning Rate Experiment
-# ==========================================
-print("\n--- Extension 3: Learning Rate Experiments (using CNN) ---")
-lrs = [0.001, 0.0001] # Standard vs Low LR
-results = {}
+# --- C. Learning Rate Schedule (Extension 3) ---
+# Course Reference: Lecture 2, Slide 40 (Step Size/Learning Rate)
+print("\n--- Experiment 3: Learning Rates ---")
+lrs = [0.1, 0.01, 0.001]
+plt.figure(figsize=(10, 5))
 
 for lr in lrs:
-    print(f"\nTesting Learning Rate: {lr}")
-    temp_model = SimpleCNN() # Create fresh model
-    losses = train_model(temp_model, train_loader, learning_rate=lr, use_scheduler=True)
-    acc = evaluate_model(temp_model, test_loader)
-    results[lr] = acc
-    print(f"LR {lr} Final Accuracy: {acc:.2f}%")
+    print(f"Testing Learning Rate: {lr}")
+    temp_model = MLP() # Use MLP for quick testing
+    losses = train_model(temp_model, learning_rate=lr)
+    plt.plot(losses, label=f'LR={lr}')
 
-print("\nFinal Results Summary:", results)
+plt.title('Effect of Learning Rate on Training')
+plt.xlabel('Epochs')
+plt.ylabel('Loss')
+plt.legend()
+plt.grid(True)
+plt.savefig('lr_comparison.png')
+plt.show()
+
+print("\nAll experiments finished!")
