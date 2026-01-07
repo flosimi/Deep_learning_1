@@ -22,8 +22,7 @@ EPOCHS = 5  # Keep it low for demonstration speed (increase to 10-20 for better 
 transform = transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize((0.5,), (0.5,))
-])
-
+])# Data Loading
 print("\nDownloading and Loading Data...")
 # Training Data
 train_dataset = torchvision.datasets.FashionMNIST(root='./data', train=True, 
